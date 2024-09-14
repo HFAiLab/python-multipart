@@ -10,7 +10,7 @@ from email.message import Message
 from enum import IntEnum
 from io import BytesIO
 from numbers import Number
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Awaitable
 
 from .decoders import Base64Decoder, QuotedPrintableDecoder
 from .exceptions import FileError, FormParserError, MultipartParseError, QuerystringParseError
@@ -31,15 +31,15 @@ if TYPE_CHECKING:  # pragma: no cover
         on_end: Callable[[], None]
 
     class MultipartCallbacks(TypedDict, total=False):
-        on_part_begin: Callable[[], None]
-        on_part_data: Callable[[bytes, int, int], None]
-        on_part_end: Callable[[], None]
-        on_header_begin: Callable[[], None]
-        on_header_field: Callable[[bytes, int, int], None]
-        on_header_value: Callable[[bytes, int, int], None]
-        on_header_end: Callable[[], None]
-        on_headers_finished: Callable[[], None]
-        on_end: Callable[[], None]
+        on_part_begin: Callable[[], Awaitable[None]]
+        on_part_data: Callable[[bytes, int, int], Awaitable[None]]
+        on_part_end: Callable[[], Awaitable[None]]
+        on_header_begin: Callable[[], Awaitable[None]]
+        on_header_field: Callable[[bytes, int, int], Awaitable[None]]
+        on_header_value: Callable[[bytes, int, int], Awaitable[None]]
+        on_header_end: Callable[[], Awaitable[None]]
+        on_headers_finished: Callable[[], Awaitable[None]]
+        on_end: Callable[[], Awaitable[None]]
 
     class FormParserConfig(TypedDict):
         UPLOAD_DIR: str | None
@@ -137,7 +137,7 @@ LOWER_Z = b"z"[0]
 NULL = b"\x00"[0]
 
 # Mask for ASCII characters that can be http tokens.
-# Per RFC7230 - 3.2.6, this is all alpha-numeric characters 
+# Per RFC7230 - 3.2.6, this is all alpha-numeric characters
 # and these: !#$%&'*+-.^_`|~
 TOKEN_CHARS_SET = frozenset(
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -588,7 +588,7 @@ class BaseParser:
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
 
-    def callback(self, name: str, data: bytes | None = None, start: int | None = None, end: int | None = None):
+    async def callback(self, name: str, data: bytes | None = None, start: int | None = None, end: int | None = None):
         """This function calls a provided callback with some data.  If the
         callback is not set, will do nothing.
 
@@ -611,10 +611,10 @@ class BaseParser:
                 return
 
             self.logger.debug("Calling %s with data[%d:%d]", name, start, end)
-            func(data, start, end)
+            await func(data, start, end)
         else:
             self.logger.debug("Calling %s with no data", name)
-            func()
+            await func()
 
     def set_callback(self, name: str, new_func: Callable[..., Any] | None) -> None:
         """Update the function for a callback.  Removes from the callbacks dict
@@ -1003,7 +1003,7 @@ class MultipartParser(BaseParser):
         # '--\r\n' is 8 bytes.
         self.lookbehind = [NULL for _ in range(len(boundary) + 8)]
 
-    def write(self, data: bytes) -> int:
+    async def write(self, data: bytes) -> int:
         """Write some data to the parser, which will perform size verification,
         and then parse the data into the appropriate location (e.g. header,
         data, etc.), and pass this on to the underlying callback.  If an error
@@ -1033,13 +1033,13 @@ class MultipartParser(BaseParser):
 
         l = 0
         try:
-            l = self._internal_write(data, data_len)
+            l = await self._internal_write(data, data_len)
         finally:
             self._current_size += l
 
         return l
 
-    def _internal_write(self, data: bytes, length: int) -> int:
+    async def _internal_write(self, data: bytes, length: int) -> int:
         # Get values from locals.
         boundary = self.boundary
 
@@ -1065,7 +1065,7 @@ class MultipartParser(BaseParser):
         # end of the buffer, and reset the mark, instead of deleting it.  This
         # is used at the end of the function to call our callbacks with any
         # remaining data in this chunk.
-        def data_callback(name: str, remaining: bool = False) -> None:
+        async def data_callback(name: str, remaining: bool = False) -> None:
             marked_index = self.marks.get(name)
             if marked_index is None:
                 return
@@ -1073,13 +1073,13 @@ class MultipartParser(BaseParser):
             # If we're getting remaining data, we ignore the current i value
             # and just call with the remaining data.
             if remaining:
-                self.callback(name, data, marked_index, length)
+                await self.callback(name, data, marked_index, length)
                 self.marks[name] = 0
 
             # Otherwise, we call it from the mark to the current byte we're
             # processing.
             else:
-                self.callback(name, data, marked_index, i)
+                await self.callback(name, data, marked_index, i)
                 self.marks.pop(name, None)
 
         # For each byte...
@@ -1127,7 +1127,7 @@ class MultipartParser(BaseParser):
                     index = 0
 
                     # Callback for the start of a part.
-                    self.callback("part_begin")
+                    await self.callback("part_begin")
 
                     # Move to the next character and state.
                     state = MultipartState.HEADER_FIELD_START
@@ -1157,7 +1157,7 @@ class MultipartParser(BaseParser):
                 # to stop parsing headers in the MultipartState.HEADER_FIELD state,
                 # below.
                 if c != CR:
-                    self.callback("header_begin")
+                    await self.callback("header_begin")
 
                 # Move to parsing header fields.
                 state = MultipartState.HEADER_FIELD
@@ -1187,7 +1187,7 @@ class MultipartParser(BaseParser):
                         raise e
 
                     # Call our callback with the header field.
-                    data_callback("header_field")
+                    await data_callback("header_field")
 
                     # Move to parsing the header value.
                     state = MultipartState.HEADER_VALUE_START
@@ -1216,8 +1216,8 @@ class MultipartParser(BaseParser):
                 # If we've got a CR, we're nearly done our headers.  Otherwise,
                 # we do nothing and just move past this character.
                 if c == CR:
-                    data_callback("header_value")
-                    self.callback("header_end")
+                    await data_callback("header_value")
+                    await self.callback("header_end")
                     state = MultipartState.HEADER_VALUE_ALMOST_DONE
 
             elif state == MultipartState.HEADER_VALUE_ALMOST_DONE:
@@ -1245,12 +1245,12 @@ class MultipartParser(BaseParser):
                     e.offset = i
                     raise e
 
-                self.callback("headers_finished")
+                await self.callback("headers_finished")
                 state = MultipartState.PART_DATA_START
 
             elif state == MultipartState.PART_DATA_START:
                 # Mark the start of our part data.
-                set_mark("part_data")
+                await set_mark("part_data")
 
                 # Start processing part data, including this character.
                 state = MultipartState.PART_DATA
@@ -1298,7 +1298,7 @@ class MultipartParser(BaseParser):
                         # If we found a match for our boundary, we send the
                         # existing data.
                         if index == 0:
-                            data_callback("part_data")
+                            await data_callback("part_data")
 
                         # The current character matches, so continue!
                         index += 1
@@ -1338,8 +1338,8 @@ class MultipartParser(BaseParser):
 
                             # Callback indicating that we've reached the end of
                             # a part, and are starting a new one.
-                            self.callback("part_end")
-                            self.callback("part_begin")
+                            await self.callback("part_end")
+                            await self.callback("part_begin")
 
                             # Move to parsing new headers.
                             index = 0
@@ -1359,8 +1359,8 @@ class MultipartParser(BaseParser):
                         if c == HYPHEN:
                             # Callback to end the current part, and then the
                             # message.
-                            self.callback("part_end")
-                            self.callback("end")
+                            await self.callback("part_end")
+                            await self.callback("end")
                             state = MultipartState.END
                         else:
                             # No match, so reset index.
@@ -1378,7 +1378,7 @@ class MultipartParser(BaseParser):
                 elif prev_index > 0:
                     # Callback to write the saved data.
                     lb_data = join_bytes(self.lookbehind)
-                    self.callback("part_data", lb_data, 0, prev_index)
+                    await self.callback("part_data", lb_data, 0, prev_index)
 
                     # Overwrite our previous index.
                     prev_index = 0
@@ -1414,9 +1414,9 @@ class MultipartParser(BaseParser):
         # that we haven't yet reached the end of this 'thing'.  So, by setting
         # the mark to 0, we cause any data callbacks that take place in future
         # calls to this function to start from the beginning of that buffer.
-        data_callback("header_field", True)
-        data_callback("header_value", True)
-        data_callback("part_data", True)
+        await data_callback("header_field", True)
+        await data_callback("header_value", True)
+        await data_callback("part_data", True)
 
         # Save values to locals.
         self.state = state
@@ -1427,7 +1427,7 @@ class MultipartParser(BaseParser):
         # all of it.
         return length
 
-    def finalize(self) -> None:
+    async def finalize(self) -> None:
         """Finalize this parser, which signals to that we are finished parsing.
 
         Note: It does not currently, but in the future, it will verify that we
