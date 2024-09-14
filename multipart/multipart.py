@@ -13,7 +13,12 @@ from numbers import Number
 from typing import TYPE_CHECKING, Any, Awaitable
 
 from .decoders import Base64Decoder, QuotedPrintableDecoder
-from .exceptions import FileError, FormParserError, MultipartParseError, QuerystringParseError
+from .exceptions import (
+    FileError,
+    FormParserError,
+    MultipartParseError,
+    QuerystringParseError,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from typing import Callable, Protocol, TypedDict
@@ -57,25 +62,21 @@ if TYPE_CHECKING:  # pragma: no cover
         MAX_MEMORY_FILE_SIZE: int
 
     class _FormProtocol(Protocol):
-        def write(self, data: bytes) -> int:
-            ...
+        def write(self, data: bytes) -> int: ...
 
-        def finalize(self) -> None:
-            ...
+        def finalize(self) -> None: ...
 
-        def close(self) -> None:
-            ...
+        def close(self) -> None: ...
 
     class FieldProtocol(_FormProtocol, Protocol):
-        def __init__(self, name: bytes) -> None:
-            ...
+        def __init__(self, name: bytes) -> None: ...
 
-        def set_none(self) -> None:
-            ...
+        def set_none(self) -> None: ...
 
     class FileProtocol(_FormProtocol, Protocol):
-        def __init__(self, file_name: bytes | None, field_name: bytes | None, config: FileConfig) -> None:
-            ...
+        def __init__(
+            self, file_name: bytes | None, field_name: bytes | None, config: FileConfig
+        ) -> None: ...
 
     OnFieldCallback = Callable[[FieldProtocol], None]
     OnFileCallback = Callable[[FileProtocol], None]
@@ -143,7 +144,8 @@ TOKEN_CHARS_SET = frozenset(
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     b"abcdefghijklmnopqrstuvwxyz"
     b"0123456789"
-    b"!#$%&'*+-.^_`|~")
+    b"!#$%&'*+-.^_`|~"
+)
 
 
 def ord_char(c: int) -> int:
@@ -321,7 +323,9 @@ class Field:
         else:
             v = repr(self.value)
 
-        return "{}(field_name={!r}, value={})".format(self.__class__.__name__, self.field_name, v)
+        return "{}(field_name={!r}, value={})".format(
+            self.__class__.__name__, self.field_name, v
+        )
 
 
 class File:
@@ -347,7 +351,12 @@ class File:
         config: The configuration for this File.  See above for valid configuration keys and their corresponding values.
     """  # noqa: E501
 
-    def __init__(self, file_name: bytes | None, field_name: bytes | None = None, config: FileConfig = {}) -> None:
+    def __init__(
+        self,
+        file_name: bytes | None,
+        field_name: bytes | None = None,
+        config: FileConfig = {},
+    ) -> None:
         # Save configuration, set other variables default.
         self.logger = logging.getLogger(__name__)
         self._config = config
@@ -474,7 +483,11 @@ class File:
             # Build options array.
             # Note that on Python 3, tempfile doesn't support byte names.  We
             # encode our paths using the default filesystem encoding.
-            suffix = self._ext.decode(sys.getfilesystemencoding()) if keep_extensions else None
+            suffix = (
+                self._ext.decode(sys.getfilesystemencoding())
+                if keep_extensions
+                else None
+            )
 
             if file_dir is None:
                 dir = None
@@ -485,10 +498,13 @@ class File:
 
             # Create a temporary (named) file with the appropriate settings.
             self.logger.info(
-                "Creating a temporary file with options: %r", {"suffix": suffix, "delete": delete_tmp, "dir": dir}
+                "Creating a temporary file with options: %r",
+                {"suffix": suffix, "delete": delete_tmp, "dir": dir},
             )
             try:
-                tmp_file = tempfile.NamedTemporaryFile(suffix=suffix, delete=delete_tmp, dir=dir)
+                tmp_file = tempfile.NamedTemporaryFile(
+                    suffix=suffix, delete=delete_tmp, dir=dir
+                )
             except OSError:
                 self.logger.exception("Error creating named temporary file")
                 raise FileError("Error creating named temporary file")
@@ -535,7 +551,11 @@ class File:
 
         # If we're in-memory and are over our limit, we create a file.
         max_memory_file_size = self._config.get("MAX_MEMORY_FILE_SIZE")
-        if self._in_memory and max_memory_file_size is not None and (self._bytes_written > max_memory_file_size):
+        if (
+            self._in_memory
+            and max_memory_file_size is not None
+            and (self._bytes_written > max_memory_file_size)
+        ):
             self.logger.info("Flushing to disk")
             self.flush_to_disk()
 
@@ -561,7 +581,9 @@ class File:
         self._fileobj.close()
 
     def __repr__(self) -> str:
-        return "{}(file_name={!r}, field_name={!r})".format(self.__class__.__name__, self.file_name, self.field_name)
+        return "{}(file_name={!r}, field_name={!r})".format(
+            self.__class__.__name__, self.file_name, self.field_name
+        )
 
 
 class BaseParser:
@@ -588,7 +610,13 @@ class BaseParser:
     def __init__(self) -> None:
         self.logger = logging.getLogger(__name__)
 
-    async def callback(self, name: str, data: bytes | None = None, start: int | None = None, end: int | None = None):
+    async def callback(
+        self,
+        name: str,
+        data: bytes | None = None,
+        start: int | None = None,
+        end: int | None = None,
+    ):
         """This function calls a provided callback with some data.  If the
         callback is not set, will do nothing.
 
@@ -656,7 +684,9 @@ class OctetStreamParser(BaseParser):
         max_size: The maximum size of body to parse.  Defaults to infinity - i.e. unbounded.
     """
 
-    def __init__(self, callbacks: OctetStreamCallbacks = {}, max_size: float = float("inf")):
+    def __init__(
+        self, callbacks: OctetStreamCallbacks = {}, max_size: float = float("inf")
+    ):
         super().__init__()
         self.callbacks = callbacks
         self._started = False
@@ -734,7 +764,10 @@ class QuerystringParser(BaseParser):
     state: QuerystringState
 
     def __init__(
-        self, callbacks: QuerystringCallbacks = {}, strict_parsing: bool = False, max_size: float = float("inf")
+        self,
+        callbacks: QuerystringCallbacks = {},
+        strict_parsing: bool = False,
+        max_size: float = float("inf"),
     ) -> None:
         super().__init__()
         self.state = QuerystringState.BEFORE_FIELD
@@ -808,11 +841,15 @@ class QuerystringParser(BaseParser):
                     if found_sep:
                         # If we're parsing strictly, we disallow blank chunks.
                         if strict_parsing:
-                            e = QuerystringParseError("Skipping duplicate ampersand/semicolon at %d" % i)
+                            e = QuerystringParseError(
+                                "Skipping duplicate ampersand/semicolon at %d" % i
+                            )
                             e.offset = i
                             raise e
                         else:
-                            self.logger.debug("Skipping duplicate ampersand/semicolon at %d", i)
+                            self.logger.debug(
+                                "Skipping duplicate ampersand/semicolon at %d", i
+                            )
                     else:
                         # This case is when we're skipping the (first)
                         # separator between fields, so we just set our flag
@@ -963,7 +1000,10 @@ class MultipartParser(BaseParser):
     """  # noqa: E501
 
     def __init__(
-        self, boundary: bytes | str, callbacks: MultipartCallbacks = {}, max_size: float = float("inf")
+        self,
+        boundary: bytes | str,
+        callbacks: MultipartCallbacks = {},
+        max_size: float = float("inf"),
     ) -> None:
         # Initialize parser state.
         super().__init__()
@@ -1135,7 +1175,10 @@ class MultipartParser(BaseParser):
                 else:
                     # Check to ensure our boundary matches
                     if c != boundary[index + 2]:
-                        msg = "Did not find boundary character %r at index " "%d" % (c, index + 2)
+                        msg = "Did not find boundary character %r at index " "%d" % (
+                            c,
+                            index + 2,
+                        )
                         self.logger.warning(msg)
                         e = MultipartParseError(msg)
                         e.offset = i
@@ -1223,7 +1266,9 @@ class MultipartParser(BaseParser):
             elif state == MultipartState.HEADER_VALUE_ALMOST_DONE:
                 # The last character should be a LF.  If not, it's an error.
                 if c != LF:
-                    msg = "Did not find LF character at end of header " "(found %r)" % (c,)
+                    msg = "Did not find LF character at end of header " "(found %r)" % (
+                        c,
+                    )
                     self.logger.warning(msg)
                     e = MultipartParseError(msg)
                     e.offset = i
@@ -1250,7 +1295,7 @@ class MultipartParser(BaseParser):
 
             elif state == MultipartState.PART_DATA_START:
                 # Mark the start of our part data.
-                await set_mark("part_data")
+                set_mark("part_data")
 
                 # Start processing part data, including this character.
                 state = MultipartState.PART_DATA
@@ -1551,7 +1596,10 @@ class FormParser:
                 max_size=self.config["MAX_BODY_SIZE"],
             )
 
-        elif content_type == "application/x-www-form-urlencoded" or content_type == "application/x-url-encoded":
+        elif (
+            content_type == "application/x-www-form-urlencoded"
+            or content_type == "application/x-url-encoded"
+        ):
             name_buffer: list[bytes] = []
 
             f: FieldProtocol = None  # type: ignore
@@ -1679,9 +1727,15 @@ class FormParser:
                     writer = QuotedPrintableDecoder(f)
 
                 else:
-                    self.logger.warning("Unknown Content-Transfer-Encoding: %r", transfer_encoding)
+                    self.logger.warning(
+                        "Unknown Content-Transfer-Encoding: %r", transfer_encoding
+                    )
                     if self.config["UPLOAD_ERROR_ON_BAD_CTE"]:
-                        raise FormParserError('Unknown Content-Transfer-Encoding "{}"'.format(transfer_encoding))
+                        raise FormParserError(
+                            'Unknown Content-Transfer-Encoding "{}"'.format(
+                                transfer_encoding
+                            )
+                        )
                     else:
                         # If we aren't erroring, then we just treat this as an
                         # unencoded Content-Transfer-Encoding.
@@ -1740,7 +1794,9 @@ class FormParser:
             self.parser.close()
 
     def __repr__(self) -> str:
-        return "{}(content_type={!r}, parser={!r})".format(self.__class__.__name__, self.content_type, self.parser)
+        return "{}(content_type={!r}, parser={!r})".format(
+            self.__class__.__name__, self.content_type, self.parser
+        )
 
 
 def create_form_parser(
@@ -1781,7 +1837,14 @@ def create_form_parser(
     file_name = headers.get("X-File-Name")
 
     # Instantiate a form parser.
-    form_parser = FormParser(content_type, on_field, on_file, boundary=boundary, file_name=file_name, config=config)
+    form_parser = FormParser(
+        content_type,
+        on_field,
+        on_file,
+        boundary=boundary,
+        file_name=file_name,
+        config=config,
+    )
 
     # Return our parser.
     return form_parser
